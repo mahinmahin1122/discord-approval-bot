@@ -85,6 +85,25 @@ async function processWebhookOrder(message) {
                 
                 console.log(`📦 New order stored: ${orderId} for ${discordUsername}`);
                 console.log(`📝 Webhook Message ID: ${message.id}`);
+                
+                // ✅ FIXED: New order notification send করবে
+                try {
+                    const notificationMsg = await message.channel.send(`📥 New order received: \`${orderId}\` for ${discordUsername}`);
+                    console.log(`📢 Notification sent for order: ${orderId}`);
+                    
+                    // Notification message কেও 30 second পর delete করবে
+                    setTimeout(async () => {
+                        try {
+                            await notificationMsg.delete();
+                            console.log(`🗑️ Notification deleted for order: ${orderId}`);
+                        } catch (deleteError) {
+                            console.log('Could not delete notification message');
+                        }
+                    }, 30000);
+                    
+                } catch (notifyError) {
+                    console.log('Could not send notification message:', notifyError.message);
+                }
             }
         }
     } catch (error) {
