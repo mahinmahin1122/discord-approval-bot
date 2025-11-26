@@ -1,15 +1,12 @@
 {
-  "name": "discord-approval-bot",
+  "name": "drk-order-bot",
   "version": "1.0.0",
-  "description": "Discord bot for sending approval messages",
-  "main": "index.js",
+  "description": "Order approval bot for Drk Survraze SMP",
+  "main": "bot.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node bot.js"
   },
   "dependencies": {
     "discord.js": "^14.14.1"
-  },
-  "engines": {
-    "node": "18.x"
   }
 }
