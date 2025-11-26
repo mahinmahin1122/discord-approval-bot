@@ -5,7 +5,7 @@ const CONFIG = {
     BOT_TOKEN: process.env.BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE',
     PREFIX: './',
     GUILD_ID: process.env.GUILD_ID || 'YOUR_SERVER_ID',
-    ORDER_CHANNEL_ID: process.env.ORDER_CHANNEL_ID || 'ORDER_CHANNEL_ID', // ✅ Specific channel ID
+    ORDER_CHANNEL_ID: process.env.ORDER_CHANNEL_ID || 'ORDER_CHANNEL_ID',
     DISCORD_INVITE_LINK: 'https://discord.gg/SjefnHedt'
 };
 
@@ -15,8 +15,7 @@ const MESSAGES = {
     ORDER_NOT_FOUND: '❌ Order ID not found in pending orders.',
     NO_PERMISSION: '❌ You do not have permission to manage orders.',
     INVALID_COMMAND: '❌ Usage: `./approved <order_id>` or `./rejected <order_id>`',
-    NO_PENDING_ORDERS: '📭 No pending orders found.',
-    WRONG_CHANNEL: `❌ Commands only work in <#${CONFIG.ORDER_CHANNEL_ID}> channel.`
+    NO_PENDING_ORDERS: '📭 No pending orders found.'
 };
 
 // ==================== BOT SETUP ====================
@@ -36,7 +35,6 @@ const pendingOrders = new Map();
 client.on('ready', () => {
     console.log(`✅ Bot logged in as ${client.user.tag}`);
     console.log(`📊 Bot is running on ${client.guilds.cache.size} servers`);
-    console.log(`🎯 Bot will only work in channel: ${CONFIG.ORDER_CHANNEL_ID}`);
     console.log(`🚀 Drk Survraze Order Bot is ready!`);
     
     client.user.setActivity('./help | Drk Survraze', { type: 'WATCHING' });
@@ -44,30 +42,13 @@ client.on('ready', () => {
 
 client.on('messageCreate', async (message) => {
     try {
-        // Ignore bot messages and DMs
-        if (message.author.bot) return;
-        if (!message.guild) return;
-
-        // ✅ Check if message is in the correct channel
-        if (message.channel.id !== CONFIG.ORDER_CHANNEL_ID) {
-            // যদি wrong channel এ command দেওয়া হয়
-            if (message.content.startsWith(`${CONFIG.PREFIX}approved`) || 
-                message.content.startsWith(`${CONFIG.PREFIX}rejected`) ||
-                message.content === `${CONFIG.PREFIX}orders`) {
-                
-                await message.reply(MESSAGES.WRONG_CHANNEL);
-                return;
-            }
-            return; // অন্য channel এ অন্য messages ignore করবে
-        }
-
-        // Webhook messages process (শুধু correct channel এ)
-        if (message.webhookId) {
+        // Webhook messages process
+        if (message.author.bot && message.webhookId) {
             await processWebhookOrder(message);
             return;
         }
         
-        // Commands process (শুধু correct channel এ)
+        // Commands process
         if (message.content.startsWith(`${CONFIG.PREFIX}approved`)) {
             await handleApprovalCommand(message);
         } else if (message.content.startsWith(`${CONFIG.PREFIX}rejected`)) {
@@ -96,18 +77,20 @@ async function processWebhookOrder(message) {
             if (orderId && discordUsername) {
                 pendingOrders.set(orderId, {
                     discordUsername: discordUsername,
-                    webhookMessageId: message.id,
+                    webhookMessageId: message.id, // ✅ Webhook message ID store
                     channelId: message.channel.id,
                     timestamp: new Date(),
                     originalEmbed: embed
                 });
                 
                 console.log(`📦 New order stored: ${orderId} for ${discordUsername}`);
+                console.log(`📝 Webhook Message ID: ${message.id}`);
                 
-                // New order notification send করবে
+                // ✅ FIXED: New order notification send করবে (এবং DELETE হবে না)
                 try {
                     await message.channel.send(`📥 New order received: \`${orderId}\` for ${discordUsername}`);
                     console.log(`📢 Notification sent for order: ${orderId}`);
+                    // ✅ এই notification message টি থাকবে, delete হবে না
                 } catch (notifyError) {
                     console.log('Could not send notification message:', notifyError.message);
                 }
@@ -188,7 +171,7 @@ async function handleApprovalCommand(message) {
 
             await user.send({ embeds: [dmEmbed] });
             
-            // শুধু WEBHOOK NOTIFICATION DELETE করবে
+            // ✅ FIXED: শুধু WEBHOOK NOTIFICATION DELETE করবে
             try {
                 const channel = await client.channels.fetch(orderInfo.channelId);
                 const webhookMessage = await channel.messages.fetch(orderInfo.webhookMessageId);
@@ -261,7 +244,7 @@ async function handleRejectionCommand(message) {
 
             await user.send({ embeds: [dmEmbed] });
             
-            // শুধু WEBHOOK NOTIFICATION DELETE করবে
+            // ✅ FIXED: শুধু WEBHOOK NOTIFICATION DELETE করবে
             try {
                 const channel = await client.channels.fetch(orderInfo.channelId);
                 const webhookMessage = await channel.messages.fetch(orderInfo.webhookMessageId);
@@ -356,7 +339,7 @@ async function handleOrdersCommand(message) {
 async function handleHelpCommand(message) {
     const helpEmbed = new EmbedBuilder()
         .setTitle('🤖 Drk Order Bot Help')
-        .setDescription(`Available commands for administrators in <#${CONFIG.ORDER_CHANNEL_ID}>:`)
+        .setDescription('Available commands for administrators:')
         .addFields(
             { name: './approved <order_id>', value: 'Approve an order and send DM to user\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
             { name: './rejected <order_id>', value: 'Reject an order and send DM to user\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
