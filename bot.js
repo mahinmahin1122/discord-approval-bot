@@ -6,7 +6,7 @@ const CONFIG = {
     PREFIX: './',
     GUILD_ID: process.env.GUILD_ID || 'YOUR_SERVER_ID',
     ORDER_CHANNEL_ID: process.env.ORDER_CHANNEL_ID || 'ORDER_CHANNEL_ID',
-    ALLOWED_COMMAND_CHANNEL_ID: process.env.ALLOWED_CHANNEL_ID || 'YOUR_ALLOWED_CHANNEL_ID', // ✅ শুধুমাত্র এই চ্যানেলে কমান্ড কাজ করবে
+    ALLOWED_COMMAND_CHANNEL_ID: process.env.ALLOWED_CHANNEL_ID || 'YOUR_ALLOWED_CHANNEL_ID',
     DISCORD_INVITE_LINK: 'https://discord.gg/SjefnHedt'
 };
 
@@ -183,6 +183,10 @@ async function handleApprovalCommand(message) {
         const user = await findUserByUsername(orderInfo.discordUsername);
         
         if (user) {
+            // ✅ REAL-TIME TIMESTAMP - DM পাঠানোর সময়ের টাইমস্ট্যাম্প
+            const approvalTime = new Date();
+            const bangladeshTime = formatBangladeshTime(approvalTime);
+            
             // Send approval DM to user
             const dmEmbed = new EmbedBuilder()
                 .setTitle('🎉 ORDER APPROVED!')
@@ -190,10 +194,11 @@ async function handleApprovalCommand(message) {
                 .addFields(
                     { name: '🆔 Order ID', value: `\`${orderId}\``, inline: true },
                     { name: '⭐ Status', value: '✅ Approved', inline: true },
-                    { name: '⏰ Approved At', value: new Date().toLocaleString(), inline: true }
+                    { name: '⏰ Approved At', value: bangladeshTime, inline: true }
                 )
                 .setColor(0x00FF00)
-                .setFooter({ text: 'Drk Survraze SMP - Thank you for your purchase!' });
+                .setFooter({ text: 'Drk Survraze SMP - Thank you for your purchase!' })
+                .setTimestamp(approvalTime); // ✅ Embed timestamp সেট করা
 
             await user.send({ embeds: [dmEmbed] });
             
@@ -220,7 +225,7 @@ async function handleApprovalCommand(message) {
             // Remove from pending orders
             pendingOrders.delete(orderId);
             
-            console.log(`✅ Order ${orderId} approved for ${orderInfo.discordUsername}`);
+            console.log(`✅ Order ${orderId} approved for ${orderInfo.discordUsername} at ${bangladeshTime}`);
             
         } else {
             await message.reply(`❌ User not found: ${orderInfo.discordUsername}`);
@@ -253,6 +258,10 @@ async function handleRejectionCommand(message) {
         const user = await findUserByUsername(orderInfo.discordUsername);
         
         if (user) {
+            // ✅ REAL-TIME TIMESTAMP - DM পাঠানোর সময়ের টাইমস্ট্যাম্প
+            const rejectionTime = new Date();
+            const bangladeshTime = formatBangladeshTime(rejectionTime);
+            
             // Send rejection DM to user with Discord link
             const dmEmbed = new EmbedBuilder()
                 .setTitle('❌ ORDER REJECTED')
@@ -260,11 +269,12 @@ async function handleRejectionCommand(message) {
                 .addFields(
                     { name: '🆔 Order ID', value: `\`${orderId}\``, inline: true },
                     { name: '⭐ Status', value: '❌ Rejected', inline: true },
-                    { name: '⏰ Rejected At', value: new Date().toLocaleString(), inline: true },
+                    { name: '⏰ Rejected At', value: bangladeshTime, inline: true },
                     { name: '📞 Need Help?', value: `[Create Ticket on Discord](${CONFIG.DISCORD_INVITE_LINK})`, inline: false }
                 )
                 .setColor(0xFF0000)
-                .setFooter({ text: 'Drk Survraze SMP - Contact support if you have questions' });
+                .setFooter({ text: 'Drk Survraze SMP - Contact support if you have questions' })
+                .setTimestamp(rejectionTime); // ✅ Embed timestamp সেট করা
 
             await user.send({ embeds: [dmEmbed] });
             
@@ -291,7 +301,7 @@ async function handleRejectionCommand(message) {
             // Remove from pending orders
             pendingOrders.delete(orderId);
             
-            console.log(`❌ Order ${orderId} rejected for ${orderInfo.discordUsername}`);
+            console.log(`❌ Order ${orderId} rejected for ${orderInfo.discordUsername} at ${bangladeshTime}`);
             
         } else {
             await message.reply(`❌ User not found: ${orderInfo.discordUsername}`);
@@ -301,6 +311,20 @@ async function handleRejectionCommand(message) {
         console.error('Rejection error:', error);
         await message.reply('❌ Error rejecting order.');
     }
+}
+
+// ✅ বাংলাদেশের সময় ফরম্যাট করার ফাংশন
+function formatBangladeshTime(date) {
+    return date.toLocaleString('en-BD', {
+        timeZone: 'Asia/Dhaka',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    });
 }
 
 async function findUserByUsername(username) {
