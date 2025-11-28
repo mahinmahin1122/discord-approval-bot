@@ -13,9 +13,10 @@ const CONFIG = {
 const MESSAGES = {
     APPROVAL_SUCCESS: '🎉 **YOUR ORDER APPROVED!**\nYour purchase has been approved successfully!',
     REJECTION_MESSAGE: '❌ **YOUR ORDER REJECTED**\nIf you have any problem, please create a ticket on our Discord server.',
+    DISMISS_SUCCESS: '🗑️ **ORDER DISMISSED**\nThe order has been dismissed without notification to user.',
     ORDER_NOT_FOUND: '❌ Order ID not found in pending orders.',
     NO_PERMISSION: '❌ You do not have permission to manage orders.',
-    INVALID_COMMAND: '❌ Usage: `./approved <order_id>` or `./rejected <order_id>`',
+    INVALID_COMMAND: '❌ Usage: `./approved <order_id>` or `./rejected <order_id>` or `./dismiss <order_id>`',
     NO_PENDING_ORDERS: '📭 No pending orders found.',
     WRONG_CHANNEL: `❌ Commands are only allowed in <#${CONFIG.ALLOWED_COMMAND_CHANNEL_ID}> channel.`
 };
@@ -76,6 +77,8 @@ client.on('messageCreate', async (message) => {
             await handleApprovalCommand(message);
         } else if (message.content.startsWith(`${CONFIG.PREFIX}rejected`)) {
             await handleRejectionCommand(message);
+        } else if (message.content.startsWith(`${CONFIG.PREFIX}dismiss`)) {
+            await handleDismissCommand(message);
         } else if (message.content === `${CONFIG.PREFIX}orders`) {
             await handleOrdersCommand(message);
         } else if (message.content === `${CONFIG.PREFIX}ping`) {
@@ -313,6 +316,55 @@ async function handleRejectionCommand(message) {
     }
 }
 
+async function handleDismissCommand(message) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        return message.reply(MESSAGES.NO_PERMISSION);
+    }
+
+    const args = message.content.split(' ');
+    if (args.length < 2) {
+        return message.reply(MESSAGES.INVALID_COMMAND);
+    }
+
+    const orderId = args[1];
+    const orderInfo = pendingOrders.get(orderId);
+
+    if (!orderInfo) {
+        return message.reply(MESSAGES.ORDER_NOT_FOUND);
+    }
+
+    try {
+        // ✅ Webhook notification delete করবে
+        try {
+            const channel = await client.channels.fetch(orderInfo.channelId);
+            const webhookMessage = await channel.messages.fetch(orderInfo.webhookMessageId);
+            
+            setTimeout(async () => {
+                try {
+                    await webhookMessage.delete();
+                    console.log(`🗑️ Webhook notification deleted for dismissed order: ${orderId}`);
+                } catch (deleteError) {
+                    console.log('❌ Could not delete webhook notification:', deleteError.message);
+                }
+            }, 10000);
+
+        } catch (webhookError) {
+            console.log('❌ Could not find webhook message to delete:', webhookError.message);
+        }
+
+        await message.reply(`🗑️ Order \`${orderId}\` dismissed! No DM sent to user.`);
+        
+        // Remove from pending orders
+        pendingOrders.delete(orderId);
+        
+        console.log(`🗑️ Order ${orderId} dismissed without notification`);
+        
+    } catch (error) {
+        console.error('Dismiss error:', error);
+        await message.reply('❌ Error dismissing order.');
+    }
+}
+
 // ✅ বাংলাদেশের সময় ফরম্যাট করার ফাংশন
 function formatBangladeshTime(date) {
     return date.toLocaleString('en-BD', {
@@ -377,7 +429,7 @@ async function handleOrdersCommand(message) {
         .setTitle('📦 Pending Orders')
         .setDescription(ordersList)
         .setColor(0xFFA500)
-        .setFooter({ text: `Total: ${pendingOrders.size} orders - Use ./approved or ./rejected <order_id>` });
+        .setFooter({ text: `Total: ${pendingOrders.size} orders - Use ./approved or ./rejected or ./dismiss <order_id>` });
 
     await message.reply({ embeds: [embed] });
 }
@@ -389,6 +441,7 @@ async function handleHelpCommand(message) {
         .addFields(
             { name: './approved <order_id>', value: 'Approve an order and send DM to user\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
             { name: './rejected <order_id>', value: 'Reject an order and send DM to user\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
+            { name: './dismiss <order_id>', value: 'Dismiss an order without sending DM\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
             { name: './orders', value: 'List all pending orders', inline: false },
             { name: './ping', value: 'Check bot latency', inline: false },
             { name: './channel', value: 'Show current command channel', inline: false }
