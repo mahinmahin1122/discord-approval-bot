@@ -173,9 +173,17 @@ function extractOrderDetails(embed) {
     
     let details = '';
     for (let field of embed.fields) {
-        if (field.name.includes('Product') || field.name.includes('Item') || field.name.includes('📦')) {
+        if (field.name.includes('Product') || field.name.includes('Item') || field.name.includes('📦') || field.name.includes('Package')) {
             details = field.value.replace(/[`]/g, '').trim();
             break;
+        }
+    }
+    
+    // যদি Product field না পাওয়া যায়, তাহলে Description থেকে খোঁজা
+    if (!details && embed.description) {
+        const descMatch = embed.description.match(/(Product|Item|Package):?\s*([^\n]+)/i);
+        if (descMatch) {
+            details = descMatch[2].trim();
         }
     }
     
@@ -223,24 +231,25 @@ async function handleApprovalCommand(message) {
 
             await user.send({ embeds: [dmEmbed] });
             
-            // ✅ ANNOUNCEMENT CHANNEL এ মেসেজ পাঠানো
+            // ✅ ANNOUNCEMENT CHANNEL এ মেসেজ পাঠানো - SIMPLE VERSION
             try {
                 const announcementChannel = await client.channels.fetch(CONFIG.ANNOUNCEMENT_CHANNEL_ID);
-                const announcementEmbed = new EmbedBuilder()
-                    .setTitle('🎉 NEW ORDER APPROVED!')
-                    .setDescription(`A new order has been successfully approved!`)
-                    .addFields(
-                        { name: '🆔 Order ID', value: `\`${orderId}\``, inline: true },
-                        { name: '👤 Customer', value: `\`${orderInfo.discordUsername}\``, inline: true },
-                        { name: '📦 Product', value: orderInfo.orderDetails, inline: false },
-                        { name: '⭐ Status', value: '✅ Approved', inline: true },
-                        { name: '⏰ Approved At', value: bangladeshTime, inline: true }
-                    )
-                    .setColor(0x00FF00)
-                    .setFooter({ text: 'Drk Survraze SMP - Order Management System' })
-                    .setTimestamp(approvalTime);
-
-                await announcementChannel.send({ embeds: [announcementEmbed] });
+                
+                // @everyone সহ মেসেজ পাঠানো
+                const announcementMessage = await announcementChannel.send({
+                    content: `@everyone\n🎉 **NEW ORDER APPROVED!**`,
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor(0x00FF00)
+                            .addFields(
+                                { name: '👤 Customer', value: `\`${orderInfo.discordUsername}\``, inline: true },
+                                { name: '📦 Purchase Type', value: orderInfo.orderDetails, inline: true }
+                            )
+                            .setFooter({ text: 'Drk Survraze SMP - Order System' })
+                            .setTimestamp(approvalTime)
+                    ]
+                });
+                
                 console.log(`📢 Announcement sent for approved order: ${orderId}`);
             } catch (announcementError) {
                 console.log('❌ Could not send announcement:', announcementError.message);
@@ -482,7 +491,7 @@ async function handleHelpCommand(message) {
         .setTitle('🤖 Drk Order Bot Help')
         .setDescription(`Available commands for administrators in <#${CONFIG.ALLOWED_COMMAND_CHANNEL_ID}>:`)
         .addFields(
-            { name: './approved <order_id>', value: 'Approve an order and send DM to user\n📢 Announcement will be sent to members channel\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
+            { name: './approved <order_id>', value: 'Approve an order and send DM to user\n📢 Announcement will be sent to members channel with @everyone\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
             { name: './rejected <order_id>', value: 'Reject an order and send DM to user\n❌ No announcement will be sent\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
             { name: './dismiss <order_id>', value: 'Dismiss an order without sending DM\n❌ No announcement will be sent\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
             { name: './orders', value: 'List all pending orders', inline: false },
@@ -532,4 +541,4 @@ client.login(CONFIG.BOT_TOKEN)
     .catch((error) => {
         console.error('❌ Login failed:', error);
         process.exit(1);
-    });
+    })
