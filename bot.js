@@ -7,6 +7,7 @@ const CONFIG = {
     GUILD_ID: process.env.GUILD_ID || 'YOUR_SERVER_ID',
     ORDER_CHANNEL_ID: process.env.ORDER_CHANNEL_ID || 'ORDER_CHANNEL_ID',
     ALLOWED_COMMAND_CHANNEL_ID: process.env.ALLOWED_CHANNEL_ID || 'YOUR_ALLOWED_CHANNEL_ID',
+    ANNOUNCEMENT_CHANNEL_ID: '1444273009069129811', // ✅ নতুন অ্যানাউন্সমেন্ট চ্যানেল
     DISCORD_INVITE_LINK: 'https://discord.gg/SjefnHedt'
 };
 
@@ -40,6 +41,7 @@ client.on('ready', () => {
     console.log(`📊 Bot is running on ${client.guilds.cache.size} servers`);
     console.log(`🚀 Drk Survraze Order Bot is ready!`);
     console.log(`📁 Command Channel: ${CONFIG.ALLOWED_COMMAND_CHANNEL_ID}`);
+    console.log(`📢 Announcement Channel: ${CONFIG.ANNOUNCEMENT_CHANNEL_ID}`);
     
     client.user.setActivity('./help | Drk Survraze', { type: 'WATCHING' });
 });
@@ -101,6 +103,7 @@ async function processWebhookOrder(message) {
             const embed = message.embeds[0];
             const orderId = extractOrderId(embed);
             const discordUsername = extractDiscordUsername(embed);
+            const orderDetails = extractOrderDetails(embed);
             
             if (orderId && discordUsername) {
                 pendingOrders.set(orderId, {
@@ -108,7 +111,8 @@ async function processWebhookOrder(message) {
                     webhookMessageId: message.id,
                     channelId: message.channel.id,
                     timestamp: new Date(),
-                    originalEmbed: embed
+                    originalEmbed: embed,
+                    orderDetails: orderDetails // ✅ অর্ডারের ডিটেইলস স্টোর করা
                 });
                 
                 console.log(`📦 New order stored: ${orderId} for ${discordUsername}`);
@@ -164,6 +168,20 @@ function extractDiscordUsername(embed) {
     return null;
 }
 
+function extractOrderDetails(embed) {
+    if (!embed.fields) return 'No details available';
+    
+    let details = '';
+    for (let field of embed.fields) {
+        if (field.name.includes('Product') || field.name.includes('Item') || field.name.includes('📦')) {
+            details = field.value.replace(/[`]/g, '').trim();
+            break;
+        }
+    }
+    
+    return details || 'Product details not specified';
+}
+
 async function handleApprovalCommand(message) {
     // ✅ Channel check already done above, so directly check permissions
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -201,9 +219,32 @@ async function handleApprovalCommand(message) {
                 )
                 .setColor(0x00FF00)
                 .setFooter({ text: 'Drk Survraze SMP - Thank you for your purchase!' })
-                .setTimestamp(approvalTime); // ✅ Embed timestamp সেট করা
+                .setTimestamp(approvalTime);
 
             await user.send({ embeds: [dmEmbed] });
+            
+            // ✅ ANNOUNCEMENT CHANNEL এ মেসেজ পাঠানো
+            try {
+                const announcementChannel = await client.channels.fetch(CONFIG.ANNOUNCEMENT_CHANNEL_ID);
+                const announcementEmbed = new EmbedBuilder()
+                    .setTitle('🎉 NEW ORDER APPROVED!')
+                    .setDescription(`A new order has been successfully approved!`)
+                    .addFields(
+                        { name: '🆔 Order ID', value: `\`${orderId}\``, inline: true },
+                        { name: '👤 Customer', value: `\`${orderInfo.discordUsername}\``, inline: true },
+                        { name: '📦 Product', value: orderInfo.orderDetails, inline: false },
+                        { name: '⭐ Status', value: '✅ Approved', inline: true },
+                        { name: '⏰ Approved At', value: bangladeshTime, inline: true }
+                    )
+                    .setColor(0x00FF00)
+                    .setFooter({ text: 'Drk Survraze SMP - Order Management System' })
+                    .setTimestamp(approvalTime);
+
+                await announcementChannel.send({ embeds: [announcementEmbed] });
+                console.log(`📢 Announcement sent for approved order: ${orderId}`);
+            } catch (announcementError) {
+                console.log('❌ Could not send announcement:', announcementError.message);
+            }
             
             // ✅ Webhook notification delete করবে
             try {
@@ -277,9 +318,11 @@ async function handleRejectionCommand(message) {
                 )
                 .setColor(0xFF0000)
                 .setFooter({ text: 'Drk Survraze SMP - Contact support if you have questions' })
-                .setTimestamp(rejectionTime); // ✅ Embed timestamp সেট করা
+                .setTimestamp(rejectionTime);
 
             await user.send({ embeds: [dmEmbed] });
+            
+            // ❌ REJECTED হলে ANNOUNCEMENT CHANNEL এ কিছু পাঠানো হবে না
             
             // ✅ Webhook notification delete করবে
             try {
@@ -439,9 +482,9 @@ async function handleHelpCommand(message) {
         .setTitle('🤖 Drk Order Bot Help')
         .setDescription(`Available commands for administrators in <#${CONFIG.ALLOWED_COMMAND_CHANNEL_ID}>:`)
         .addFields(
-            { name: './approved <order_id>', value: 'Approve an order and send DM to user\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
-            { name: './rejected <order_id>', value: 'Reject an order and send DM to user\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
-            { name: './dismiss <order_id>', value: 'Dismiss an order without sending DM\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
+            { name: './approved <order_id>', value: 'Approve an order and send DM to user\n📢 Announcement will be sent to members channel\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
+            { name: './rejected <order_id>', value: 'Reject an order and send DM to user\n❌ No announcement will be sent\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
+            { name: './dismiss <order_id>', value: 'Dismiss an order without sending DM\n❌ No announcement will be sent\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
             { name: './orders', value: 'List all pending orders', inline: false },
             { name: './ping', value: 'Check bot latency', inline: false },
             { name: './channel', value: 'Show current command channel', inline: false }
@@ -459,6 +502,7 @@ async function handleChannelCommand(message) {
         .addFields(
             { name: 'Channel ID', value: `\`${CONFIG.ALLOWED_COMMAND_CHANNEL_ID}\``, inline: true },
             { name: 'Channel Name', value: `\`${message.channel.name}\``, inline: true },
+            { name: 'Announcement Channel', value: `<#${CONFIG.ANNOUNCEMENT_CHANNEL_ID}>`, inline: false },
             { name: 'Status', value: '✅ Commands Enabled', inline: true }
         )
         .setColor(0x00FF00)
@@ -483,6 +527,7 @@ process.on('uncaughtException', (error) => {
 // ==================== START BOT ====================
 console.log('🚀 Starting Drk Survraze Order Bot on Railway...');
 console.log(`📁 Command Channel Restriction: ${CONFIG.ALLOWED_COMMAND_CHANNEL_ID}`);
+console.log(`📢 Announcement Channel: ${CONFIG.ANNOUNCEMENT_CHANNEL_ID}`);
 client.login(CONFIG.BOT_TOKEN)
     .catch((error) => {
         console.error('❌ Login failed:', error);
