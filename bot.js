@@ -32,7 +32,7 @@ const client = new Client({
     ]
 });
 
-// Memory storage
+// Memory storage - PERMANENT STORAGE
 const pendingOrders = new Map();
 
 // ==================== BOT EVENTS ====================
@@ -42,6 +42,7 @@ client.on('ready', () => {
     console.log(`🚀 Drk Survraze Order Bot is ready!`);
     console.log(`📁 Command Channel: ${CONFIG.ALLOWED_COMMAND_CHANNEL_ID}`);
     console.log(`📢 Announcement Channel: ${CONFIG.ANNOUNCEMENT_CHANNEL_ID}`);
+    console.log(`💾 Order Storage: PERMANENT (No auto-deletion)`);
     
     client.user.setActivity('./help | Drk Survraze', { type: 'WATCHING' });
 });
@@ -89,6 +90,8 @@ client.on('messageCreate', async (message) => {
             await handleHelpCommand(message);
         } else if (message.content === `${CONFIG.PREFIX}channel`) {
             await handleChannelCommand(message);
+        } else if (message.content === `${CONFIG.PREFIX}cleanup`) {
+            await handleCleanupCommand(message);
         }
     } catch (error) {
         console.error('Message processing error:', error);
@@ -106,22 +109,30 @@ async function processWebhookOrder(message) {
             const orderDetails = extractOrderDetails(embed);
             
             if (orderId && discordUsername) {
+                // ✅ Check if order already exists
+                if (pendingOrders.has(orderId)) {
+                    console.log(`⚠️ Order ${orderId} already exists in pending orders`);
+                    return;
+                }
+                
                 pendingOrders.set(orderId, {
                     discordUsername: discordUsername,
                     webhookMessageId: message.id,
                     channelId: message.channel.id,
                     timestamp: new Date(),
                     originalEmbed: embed,
-                    orderDetails: orderDetails // ✅ অর্ডারের ডিটেইলস স্টোর করা
+                    orderDetails: orderDetails,
+                    status: 'pending' // ✅ Order status track করা
                 });
                 
                 console.log(`📦 New order stored: ${orderId} for ${discordUsername}`);
                 console.log(`📝 Webhook Message ID: ${message.id}`);
+                console.log(`⏰ Stored at: ${new Date().toLocaleString()}`);
                 
                 // ✅ New order notification send করবে allowed চ্যানেলে
                 try {
                     const allowedChannel = await client.channels.fetch(CONFIG.ALLOWED_COMMAND_CHANNEL_ID);
-                    await allowedChannel.send(`📥 New order received: \`${orderId}\` for ${discordUsername}`);
+                    await allowedChannel.send(`📥 New order received: \`${orderId}\` for ${discordUsername}\n⏰ Received at: ${new Date().toLocaleString()}`);
                     console.log(`📢 Notification sent to command channel for order: ${orderId}`);
                 } catch (notifyError) {
                     console.log('Could not send notification to command channel:', notifyError.message);
@@ -273,12 +284,13 @@ async function handleApprovalCommand(message) {
                 console.log('❌ Could not find webhook message to delete:', webhookError.message);
             }
 
-            await message.reply(`✅ Order \`${orderId}\` approved! DM sent to ${orderInfo.discordUsername}`);
+            await message.reply(`✅ Order \`${orderId}\` approved! DM sent to ${orderInfo.discordUsername}\n⏰ Order was pending since: ${orderInfo.timestamp.toLocaleString()}`);
             
             // Remove from pending orders
             pendingOrders.delete(orderId);
             
             console.log(`✅ Order ${orderId} approved for ${orderInfo.discordUsername} at ${bangladeshTime}`);
+            console.log(`⏰ Order was pending for: ${timeDiff(orderInfo.timestamp, approvalTime)}`);
             
         } else {
             await message.reply(`❌ User not found: ${orderInfo.discordUsername}`);
@@ -351,12 +363,13 @@ async function handleRejectionCommand(message) {
                 console.log('❌ Could not find webhook message to delete:', webhookError.message);
             }
 
-            await message.reply(`❌ Order \`${orderId}\` rejected! DM sent to ${orderInfo.discordUsername}`);
+            await message.reply(`❌ Order \`${orderId}\` rejected! DM sent to ${orderInfo.discordUsername}\n⏰ Order was pending since: ${orderInfo.timestamp.toLocaleString()}`);
             
             // Remove from pending orders
             pendingOrders.delete(orderId);
             
             console.log(`❌ Order ${orderId} rejected for ${orderInfo.discordUsername} at ${bangladeshTime}`);
+            console.log(`⏰ Order was pending for: ${timeDiff(orderInfo.timestamp, rejectionTime)}`);
             
         } else {
             await message.reply(`❌ User not found: ${orderInfo.discordUsername}`);
@@ -404,17 +417,30 @@ async function handleDismissCommand(message) {
             console.log('❌ Could not find webhook message to delete:', webhookError.message);
         }
 
-        await message.reply(`🗑️ Order \`${orderId}\` dismissed! No DM sent to user.`);
+        await message.reply(`🗑️ Order \`${orderId}\` dismissed! No DM sent to user.\n⏰ Order was pending since: ${orderInfo.timestamp.toLocaleString()}`);
         
         // Remove from pending orders
         pendingOrders.delete(orderId);
         
         console.log(`🗑️ Order ${orderId} dismissed without notification`);
+        console.log(`⏰ Order was pending for: ${timeDiff(orderInfo.timestamp, new Date())}`);
         
     } catch (error) {
         console.error('Dismiss error:', error);
         await message.reply('❌ Error dismissing order.');
     }
+}
+
+// ✅ সময়ের পার্থক্য বের করার ফাংশন
+function timeDiff(start, end) {
+    const diff = end.getTime() - start.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (days > 0) return `${days} days, ${hours} hours, ${minutes} minutes`;
+    if (hours > 0) return `${hours} hours, ${minutes} minutes`;
+    return `${minutes} minutes`;
 }
 
 // ✅ বাংলাদেশের সময় ফরম্যাট করার ফাংশন
@@ -472,18 +498,38 @@ async function handleOrdersCommand(message) {
     }
 
     const ordersList = Array.from(pendingOrders.entries())
-        .map(([orderId, info]) => 
-            `• **${orderId}** - ${info.discordUsername} (${new Date(info.timestamp).toLocaleTimeString()})`
-        )
-        .join('\n');
+        .map(([orderId, info]) => {
+            const pendingTime = timeDiff(info.timestamp, new Date());
+            return `• **${orderId}** - ${info.discordUsername}\n  ⏰ Pending for: ${pendingTime}\n  📦 Product: ${info.orderDetails}`;
+        })
+        .join('\n\n');
 
     const embed = new EmbedBuilder()
-        .setTitle('📦 Pending Orders')
+        .setTitle('📦 Pending Orders (PERMANENT STORAGE)')
         .setDescription(ordersList)
         .setColor(0xFFA500)
-        .setFooter({ text: `Total: ${pendingOrders.size} orders - Use ./approved or ./rejected or ./dismiss <order_id>` });
+        .setFooter({ text: `Total: ${pendingOrders.size} orders - Orders stay forever until manually processed` });
 
     await message.reply({ embeds: [embed] });
+}
+
+async function handleCleanupCommand(message) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        return message.reply(MESSAGES.NO_PERMISSION);
+    }
+
+    const args = message.content.split(' ');
+    if (args.length < 2) {
+        return message.reply('❌ Usage: `./cleanup <order_id>` - Remove specific order from storage');
+    }
+
+    const orderId = args[1];
+    if (pendingOrders.has(orderId)) {
+        pendingOrders.delete(orderId);
+        await message.reply(`✅ Order \`${orderId}\` removed from storage`);
+    } else {
+        await message.reply('❌ Order ID not found in storage');
+    }
 }
 
 async function handleHelpCommand(message) {
@@ -494,7 +540,8 @@ async function handleHelpCommand(message) {
             { name: './approved <order_id>', value: 'Approve an order and send DM to user\n📢 Announcement will be sent to members channel with @everyone\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
             { name: './rejected <order_id>', value: 'Reject an order and send DM to user\n❌ No announcement will be sent\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
             { name: './dismiss <order_id>', value: 'Dismiss an order without sending DM\n❌ No announcement will be sent\n⚠️ Webhook notification will be deleted after 10 seconds', inline: false },
-            { name: './orders', value: 'List all pending orders', inline: false },
+            { name: './orders', value: 'List all pending orders (PERMANENT STORAGE)', inline: false },
+            { name: './cleanup <order_id>', value: 'Remove specific order from storage', inline: false },
             { name: './ping', value: 'Check bot latency', inline: false },
             { name: './channel', value: 'Show current command channel', inline: false }
         )
@@ -512,6 +559,7 @@ async function handleChannelCommand(message) {
             { name: 'Channel ID', value: `\`${CONFIG.ALLOWED_COMMAND_CHANNEL_ID}\``, inline: true },
             { name: 'Channel Name', value: `\`${message.channel.name}\``, inline: true },
             { name: 'Announcement Channel', value: `<#${CONFIG.ANNOUNCEMENT_CHANNEL_ID}>`, inline: false },
+            { name: 'Storage Type', value: '💾 PERMANENT (No auto-deletion)', inline: false },
             { name: 'Status', value: '✅ Commands Enabled', inline: true }
         )
         .setColor(0x00FF00)
@@ -537,8 +585,9 @@ process.on('uncaughtException', (error) => {
 console.log('🚀 Starting Drk Survraze Order Bot on Railway...');
 console.log(`📁 Command Channel Restriction: ${CONFIG.ALLOWED_COMMAND_CHANNEL_ID}`);
 console.log(`📢 Announcement Channel: ${CONFIG.ANNOUNCEMENT_CHANNEL_ID}`);
+console.log(`💾 Order Storage: PERMANENT (No time limit)`);
 client.login(CONFIG.BOT_TOKEN)
     .catch((error) => {
         console.error('❌ Login failed:', error);
         process.exit(1);
-    })
+    });
